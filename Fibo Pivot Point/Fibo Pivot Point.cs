@@ -69,7 +69,8 @@ namespace cAlgo
             for (int i = MyBars.ClosePrices.Count - 1; i >= 0; i--)
             {
 
-                if (MyTime == MyBars.OpenTimes[i]) return i;
+                if (MyTime == MyBars.OpenTimes[i])
+                    return i;
 
             }
 
@@ -246,7 +247,7 @@ namespace cAlgo
         /// <summary>
         /// La versione del prodotto, progressivo, utilie per controllare gli aggiornamenti se viene reso disponibile sul sito ctrader.guru
         /// </summary>
-        public const string VERSION = "1.0.2";
+        public const string VERSION = "1.0.3";
 
         #endregion
 
@@ -369,14 +370,14 @@ namespace cAlgo
             return AddPeriod(CutToOpenByNewYork(dateTime, PivotTimeFrame), PivotTimeFrame);
 
         }
-        
+
         private static DateTime CutToOpenByNewYork(DateTime date, TimeFrame timeFrame)
         {
 
             if (timeFrame == TimeFrame.Daily)
             {
 
-                var hourShift = (date.Hour + 24 - 17) % 24;
+                var hourShift = (date.Hour + 24 - 23) % 24;
                 return new DateTime(date.Year, date.Month, date.Day, date.Hour, 0, 0, DateTimeKind.Unspecified).AddHours(-hourShift);
 
             }
@@ -401,7 +402,7 @@ namespace cAlgo
             return dateTime.Date.AddDays((double)DayOfWeek.Sunday - (double)dateTime.Date.DayOfWeek).AddHours(-7);
 
         }
-        
+
         private void CalculatePivots(DateTime startTime, int startIndex, DateTime startTimeOfNextPeriod, int index)
         {
 
@@ -440,8 +441,8 @@ namespace cAlgo
             var r3 = pivot + (Fibo3 * (high - low));
             var s3 = pivot - (Fibo3 * (high - low));
 
-            Chart.DrawTrendLine("pivot " + startIndex, pivotStartTime, pivot, pivotEndTime, pivot, Color.FromName( PivotColor.ToString( "G" ) ), 1, LineStyle.DotsVeryRare);
-            Chart.DrawTrendLine("r1 " + startIndex, pivotStartTime, r1, pivotEndTime, r1, Color.FromName(ResistanceColor.ToString("G") ), 1, LineStyle.DotsRare);
+            Chart.DrawTrendLine("pivot " + startIndex, pivotStartTime, pivot, pivotEndTime, pivot, Color.FromName(PivotColor.ToString("G")), 1, LineStyle.DotsVeryRare);
+            Chart.DrawTrendLine("r1 " + startIndex, pivotStartTime, r1, pivotEndTime, r1, Color.FromName(ResistanceColor.ToString("G")), 1, LineStyle.DotsRare);
             Chart.DrawTrendLine("r2 " + startIndex, pivotStartTime, r2, pivotEndTime, r2, Color.FromName(ResistanceColor.ToString("G")), 1, LineStyle.Lines);
             Chart.DrawTrendLine("r3 " + startIndex, pivotStartTime, r3, pivotEndTime, r3, Color.FromName(ResistanceColor.ToString("G")), 1, LineStyle.Solid);
             Chart.DrawTrendLine("s1 " + startIndex, pivotStartTime, s1, pivotEndTime, s1, Color.FromName(SupportColor.ToString("G")), 1, LineStyle.DotsRare);
