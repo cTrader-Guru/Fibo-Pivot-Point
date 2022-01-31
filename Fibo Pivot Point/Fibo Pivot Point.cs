@@ -235,6 +235,16 @@ namespace cAlgo
 
         }
 
+        public enum TimeFrameOptions
+        {
+            Auto,
+            H4,
+            Daily,
+            Weekly,
+            Monthly
+
+        };
+
         #endregion
 
         #region Identity
@@ -247,7 +257,7 @@ namespace cAlgo
         /// <summary>
         /// La versione del prodotto, progressivo, utilie per controllare gli aggiornamenti se viene reso disponibile sul sito ctrader.guru
         /// </summary>
-        public const string VERSION = "1.0.3";
+        public const string VERSION = "1.0.4";
 
         #endregion
 
@@ -268,27 +278,25 @@ namespace cAlgo
         [Parameter("Fibo 3°", Group = "Params", DefaultValue = 1.0)]
         public double Fibo3 { get; set; }
 
-        [Parameter("Only Last Day ?", Group = "Options", DefaultValue = true)]
-        public bool OnlyLastDay { get; set; }
+        [Parameter("TimeFrame", Group = "Options", DefaultValue = TimeFrameOptions.Auto)]
+        public TimeFrameOptions TFoption { get; set; }
 
         [Parameter("Show Labels", Group = "Options", DefaultValue = true)]
         public bool ShowLabels { get; set; }
 
-        [Parameter("Pivot Color", Group = "Styles", DefaultValue = MyColors.Black)]
+        [Parameter("Pivot Color", Group = "Styles", DefaultValue = MyColors.White)]
         public MyColors PivotColor { get; set; }
 
         [Parameter("Support Color", Group = "Styles", DefaultValue = MyColors.Red)]
         public MyColors SupportColor { get; set; }
 
-        [Parameter("Resistance Color", Group = "Styles", DefaultValue = MyColors.DodgerBlue)]
+        [Parameter("Resistance Color", Group = "Styles", DefaultValue = MyColors.LimeGreen)]
         public MyColors ResistanceColor { get; set; }
 
         #endregion
 
         #region Property
 
-        private DateTime _previousPeriodStartTime;
-        private int _previousPeriodStartIndex;
         private TimeFrame PivotTimeFrame;
 
         #endregion
@@ -304,24 +312,59 @@ namespace cAlgo
             // --> Stampo nei log la versione corrente
             Print("{0} : {1}", NAME, VERSION);
 
-            if (TimeFrame <= TimeFrame.Hour)
+            switch (TFoption)
             {
 
-                PivotTimeFrame = TimeFrame.Daily;
+                case TimeFrameOptions.H4:
 
-            }
-            else if (TimeFrame < TimeFrame.Daily)
-            {
+                    PivotTimeFrame = TimeFrame.Hour4;
+                    break;
+                
+                case TimeFrameOptions.Daily:
 
-                PivotTimeFrame = TimeFrame.Weekly;
+                    PivotTimeFrame = TimeFrame.Daily;
+                    break;
+                
+                case TimeFrameOptions.Weekly:
 
-            }
-            else
-            {
+                    PivotTimeFrame = TimeFrame.Weekly;
+                    break;
+                
+                case TimeFrameOptions.Monthly:
 
-                PivotTimeFrame = TimeFrame.Monthly;
+                    PivotTimeFrame = TimeFrame.Monthly;
+                    break;
+                
+                default:
 
-            }
+                    if (TimeFrame <= TimeFrame.Minute15)
+                    {
+
+                        PivotTimeFrame = TimeFrame.Hour4;
+
+                    }
+                    else if (TimeFrame < TimeFrame.Hour)
+                    {
+
+                        PivotTimeFrame = TimeFrame.Daily;
+
+                    }
+                    else if (TimeFrame < TimeFrame.Day3)
+                    {
+
+                        PivotTimeFrame = TimeFrame.Weekly;
+
+                    }
+                    else
+                    {
+
+                        PivotTimeFrame = TimeFrame.Monthly;
+
+                    }
+
+                    break;
+            
+            }            
 
         }
 
@@ -332,158 +375,135 @@ namespace cAlgo
         public override void Calculate(int index)
         {
 
-            var currentPeriodStartTime = GetStartOfPeriod(Bars.OpenTimes[index]);
-
-            if (currentPeriodStartTime == _previousPeriodStartTime)
-                return;
-
-            if (index > 0)
-                CalculatePivots(_previousPeriodStartTime, _previousPeriodStartIndex, currentPeriodStartTime, index);
-
-            _previousPeriodStartTime = currentPeriodStartTime;
-            _previousPeriodStartIndex = index;
+            _drawLevelFromCustomBar();
 
         }
 
         #endregion
 
         #region Private Methods
-
-
-        private DateTime GetStartOfPeriod(DateTime dateTime)
+        private void _drawLevelFromCustomBar()
         {
 
-            return CutToOpenByNewYork(dateTime, PivotTimeFrame);
+            // --> Prelevo le candele scelte
+            Bars BarsCustom = MarketData.GetBars(PivotTimeFrame);
 
-        }
+            int index = BarsCustom.Count - 1;
 
-        private DateTime GetEndOfPeriod(DateTime dateTime)
-        {
-
-            if (PivotTimeFrame == TimeFrame.Monthly)
-            {
-
-                return new DateTime(dateTime.Year, dateTime.Month, 1).AddMonths(1);
-
-            }
-
-            return AddPeriod(CutToOpenByNewYork(dateTime, PivotTimeFrame), PivotTimeFrame);
-
-        }
-
-        private static DateTime CutToOpenByNewYork(DateTime date, TimeFrame timeFrame)
-        {
-
-            if (timeFrame == TimeFrame.Daily)
-            {
-
-                var hourShift = (date.Hour + 24 - 23) % 24;
-                return new DateTime(date.Year, date.Month, date.Day, date.Hour, 0, 0, DateTimeKind.Unspecified).AddHours(-hourShift);
-
-            }
-
-            if (timeFrame == TimeFrame.Weekly)
-                return GetStartOfTheWeek(date);
-
-            if (timeFrame == TimeFrame.Monthly)
-            {
-
-                return new DateTime(date.Year, date.Month, 1, 0, 0, 0, DateTimeKind.Unspecified);
-
-            }
-
-            throw new ArgumentException(string.Format("Unknown timeframe: {0}", timeFrame), "timeFrame");
-
-        }
-
-        private static DateTime GetStartOfTheWeek(DateTime dateTime)
-        {
-
-            return dateTime.Date.AddDays((double)DayOfWeek.Sunday - (double)dateTime.Date.DayOfWeek).AddHours(-7);
-
-        }
-
-        private void CalculatePivots(DateTime startTime, int startIndex, DateTime startTimeOfNextPeriod, int index)
-        {
-
-            DateTime currentOpenTime = Bars.OpenTimes[index];
-            DateTime today = DateTime.Now.AddDays(-1);
-
-            // Only show output in todays timeframe
-            if (OnlyLastDay && currentOpenTime.Date.Day != today.Date.Day)
+            // --> Potrei non avere un numero sufficiente di candele
+            if (index < 1 || (BarsCustom[index].Close == BarsCustom[index].Open))
                 return;
 
-            var high = Bars.HighPrices[startIndex];
-            var low = Bars.LowPrices[startIndex];
-            var close = Bars.ClosePrices[startIndex];
-            var i = startIndex + 1;
 
-            while (GetStartOfPeriod(Bars.OpenTimes[i]) == startTime && i < Bars.ClosePrices.Count)
+            
+            try
             {
-                high = Math.Max(high, Bars.HighPrices[i]);
-                low = Math.Min(low, Bars.LowPrices[i]);
-                close = Bars.LowPrices[i];
 
-                i++;
+                // --> TimeSpan DiffTime = BarsCustom[index - i].OpenTime.Subtract(BarsCustom[(index - i) - 1].OpenTime); // <-- Strategia da valutare
+
+                DateTime thisCandle = BarsCustom[index].OpenTime;
+                DateTime nextCandle = thisCandle.AddMinutes(_getTimeFrameCandleInMinutes(PivotTimeFrame));
+
+                double high = BarsCustom[index - 1].High;
+                double low = BarsCustom[index - 1].Low;
+                double close = BarsCustom[index - 1].Close;
+
+                double pivot = (high + low + close) / 3;
+
+                double r1 = pivot + (Fibo1 * (high - low));
+                double s1 = pivot - (Fibo1 * (high - low));
+
+                double r2 = pivot + (Fibo2 * (high - low));
+                double s2 = pivot - (Fibo2 * (high - low));
+
+                double r3 = pivot + (Fibo3 * (high - low));
+                double s3 = pivot - (Fibo3 * (high - low));
+
+                Chart.DrawTrendLine("pivot ", thisCandle, pivot, nextCandle, pivot, Color.FromName(PivotColor.ToString("G")), 1, LineStyle.DotsVeryRare);
+                Chart.DrawTrendLine("r1 ", thisCandle, r1, nextCandle, r1, Color.FromName(ResistanceColor.ToString("G")), 1, LineStyle.DotsRare);
+                Chart.DrawTrendLine("r2 ", thisCandle, r2, nextCandle, r2, Color.FromName(ResistanceColor.ToString("G")), 1, LineStyle.Lines);
+                Chart.DrawTrendLine("r3 ", thisCandle, r3, nextCandle, r3, Color.FromName(ResistanceColor.ToString("G")), 1, LineStyle.Solid);
+                Chart.DrawTrendLine("s1 ", thisCandle, s1, nextCandle, s1, Color.FromName(SupportColor.ToString("G")), 1, LineStyle.DotsRare);
+                Chart.DrawTrendLine("s2 ", thisCandle, s2, nextCandle, s2, Color.FromName(SupportColor.ToString("G")), 1, LineStyle.Lines);
+                Chart.DrawTrendLine("s3 ", thisCandle, s3, nextCandle, s3, Color.FromName(SupportColor.ToString("G")), 1, LineStyle.Solid);
+
+                if (!ShowLabels)
+                    return;
+
+                Chart.DrawText("Lpivot ", "P", nextCandle, pivot, Color.FromName(PivotColor.ToString("G"))).VerticalAlignment = VerticalAlignment.Center;
+                Chart.DrawText("Lr1 ", "R1", nextCandle, r1, Color.FromName(ResistanceColor.ToString("G"))).VerticalAlignment = VerticalAlignment.Center;
+                Chart.DrawText("Lr2 ", "R2", nextCandle, r2, Color.FromName(ResistanceColor.ToString("G"))).VerticalAlignment = VerticalAlignment.Center;
+                Chart.DrawText("Lr3 ", "R3", nextCandle, r3, Color.FromName(ResistanceColor.ToString("G"))).VerticalAlignment = VerticalAlignment.Center;
+                Chart.DrawText("Ls1 ", "S1", nextCandle, s1, Color.FromName(SupportColor.ToString("G"))).VerticalAlignment = VerticalAlignment.Center;
+                Chart.DrawText("Ls2 ", "S2", nextCandle, s2, Color.FromName(SupportColor.ToString("G"))).VerticalAlignment = VerticalAlignment.Center;
+                Chart.DrawText("Ls3 ", "S3", nextCandle, s3, Color.FromName(SupportColor.ToString("G"))).VerticalAlignment = VerticalAlignment.Center;
+
             }
+            catch
+            {
 
-            var pivotStartTime = startTimeOfNextPeriod;
-            var pivotEndTime = GetEndOfPeriod(startTimeOfNextPeriod);
 
-            var pivot = (high + low + close) / 3;
-
-            var r1 = pivot + (Fibo1 * (high - low));
-            var s1 = pivot - (Fibo1 * (high - low));
-
-            var r2 = pivot + (Fibo2 * (high - low));
-            var s2 = pivot - (Fibo2 * (high - low));
-
-            var r3 = pivot + (Fibo3 * (high - low));
-            var s3 = pivot - (Fibo3 * (high - low));
-
-            Chart.DrawTrendLine("pivot " + startIndex, pivotStartTime, pivot, pivotEndTime, pivot, Color.FromName(PivotColor.ToString("G")), 1, LineStyle.DotsVeryRare);
-            Chart.DrawTrendLine("r1 " + startIndex, pivotStartTime, r1, pivotEndTime, r1, Color.FromName(ResistanceColor.ToString("G")), 1, LineStyle.DotsRare);
-            Chart.DrawTrendLine("r2 " + startIndex, pivotStartTime, r2, pivotEndTime, r2, Color.FromName(ResistanceColor.ToString("G")), 1, LineStyle.Lines);
-            Chart.DrawTrendLine("r3 " + startIndex, pivotStartTime, r3, pivotEndTime, r3, Color.FromName(ResistanceColor.ToString("G")), 1, LineStyle.Solid);
-            Chart.DrawTrendLine("s1 " + startIndex, pivotStartTime, s1, pivotEndTime, s1, Color.FromName(SupportColor.ToString("G")), 1, LineStyle.DotsRare);
-            Chart.DrawTrendLine("s2 " + startIndex, pivotStartTime, s2, pivotEndTime, s2, Color.FromName(SupportColor.ToString("G")), 1, LineStyle.Lines);
-            Chart.DrawTrendLine("s3 " + startIndex, pivotStartTime, s3, pivotEndTime, s3, Color.FromName(SupportColor.ToString("G")), 1, LineStyle.Solid);
-
-            if (!ShowLabels)
-                return;
-
-            Chart.DrawText("Lpivot " + startIndex, "P", index, pivot, Color.FromName(PivotColor.ToString("G")));
-            Chart.DrawText("Lr1 " + startIndex, "R1", index, r1, Color.FromName(ResistanceColor.ToString("G")));
-            Chart.DrawText("Lr2 " + startIndex, "R2", index, r2, Color.FromName(ResistanceColor.ToString("G")));
-            Chart.DrawText("Lr3 " + startIndex, "R3", index, r3, Color.FromName(ResistanceColor.ToString("G")));
-            Chart.DrawText("Ls1 " + startIndex, "S1", index, s1, Color.FromName(SupportColor.ToString("G")));
-            Chart.DrawText("Ls2 " + startIndex, "S2", index, s2, Color.FromName(SupportColor.ToString("G")));
-            Chart.DrawText("Ls3 " + startIndex, "S3", index, s3, Color.FromName(SupportColor.ToString("G")));
-
+            }
 
         }
 
-        public DateTime AddPeriod(DateTime dateTime, TimeFrame timeFrame)
+        private int _getTimeFrameCandleInMinutes(TimeFrame MyCandle)
         {
 
-            if (timeFrame == TimeFrame.Daily)
-            {
+            if (MyCandle == TimeFrame.Daily)
+                return 60 * 24;
+            if (MyCandle == TimeFrame.Day2)
+                return 60 * 24 * 2;
+            if (MyCandle == TimeFrame.Day3)
+                return 60 * 24 * 3;
+            if (MyCandle == TimeFrame.Hour)
+                return 60;
+            if (MyCandle == TimeFrame.Hour12)
+                return 60 * 12;
+            if (MyCandle == TimeFrame.Hour2)
+                return 60 * 2;
+            if (MyCandle == TimeFrame.Hour3)
+                return 60 * 3;
+            if (MyCandle == TimeFrame.Hour4)
+                return 60 * 4;
+            if (MyCandle == TimeFrame.Hour6)
+                return 60 * 6;
+            if (MyCandle == TimeFrame.Hour8)
+                return 60 * 8;
+            if (MyCandle == TimeFrame.Minute)
+                return 1;
+            if (MyCandle == TimeFrame.Minute10)
+                return 10;
+            if (MyCandle == TimeFrame.Minute15)
+                return 15;
+            if (MyCandle == TimeFrame.Minute2)
+                return 2;
+            if (MyCandle == TimeFrame.Minute20)
+                return 20;
+            if (MyCandle == TimeFrame.Minute3)
+                return 3;
+            if (MyCandle == TimeFrame.Minute30)
+                return 30;
+            if (MyCandle == TimeFrame.Minute4)
+                return 4;
+            if (MyCandle == TimeFrame.Minute45)
+                return 45;
+            if (MyCandle == TimeFrame.Minute5)
+                return 5;
+            if (MyCandle == TimeFrame.Minute6)
+                return 6;
+            if (MyCandle == TimeFrame.Minute7)
+                return 7;
+            if (MyCandle == TimeFrame.Minute8)
+                return 8;
+            if (MyCandle == TimeFrame.Minute9)
+                return 9;
+            if (MyCandle == TimeFrame.Monthly)
+                return 60 * 24 * 30;
+            if (MyCandle == TimeFrame.Weekly)
+                return 60 * 24 * 7;
 
-                return dateTime.AddDays(1);
-
-            }
-
-            if (timeFrame == TimeFrame.Weekly)
-            {
-
-                return dateTime.AddDays(7);
-
-            }
-
-            if (timeFrame == TimeFrame.Monthly)
-                return dateTime.AddMonths(1);
-
-            throw new ArgumentException(string.Format("Unknown timeframe: {0}", timeFrame), "timeFrame");
+            return 0;
 
         }
 
